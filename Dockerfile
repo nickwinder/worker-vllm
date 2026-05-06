@@ -47,14 +47,15 @@ ENV MODEL_NAME=$MODEL_NAME \
 ENV PYTHONPATH="/:/vllm-workspace"
 
 RUN if [ "${VLLM_NIGHTLY}" = "true" ]; then \
-    # Pin torch to the cu129 wheel index so the nightly upgrade doesn't pull
-    # in a CUDA 13.x torch (RunPod serverless hosts ship NVIDIA driver 12.9 ≈
-    # version 12090, which torch built for CUDA 13 rejects with "driver too
-    # old"). The cu129 extra-index is listed FIRST so pip prefers it for torch.
-    uv pip install --system -U vllm --pre \
-      --extra-index-url https://download.pytorch.org/whl/cu129 \
-      --index-url https://pypi.org/simple \
-      --extra-index-url https://wheels.vllm.ai/nightly && \
+    # NOTE: name says "nightly" but we install vLLM 0.20.0 stable — that's
+    # the first release with day-0 DeepSeek-V4 / MiniMax-M2.7 / Qwen3.6
+    # tool-call parser support, and unlike the nightly wheels it was compiled
+    # against CUDA 12.x (libcudart.so.12) so it loads fine on RunPod's cu129
+    # serverless hosts. True nightly wheels currently link against CUDA 13
+    # (libcudart.so.13) which isn't on those hosts. The cu129 extra-index
+    # keeps PyTorch on a matching wheel.
+    uv pip install --system -U "vllm[flashinfer]==0.20.0" \
+      --extra-index-url https://download.pytorch.org/whl/cu129 && \
     apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
     uv pip install --system git+https://github.com/huggingface/transformers.git; \
 fi
