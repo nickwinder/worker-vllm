@@ -47,7 +47,14 @@ ENV MODEL_NAME=$MODEL_NAME \
 ENV PYTHONPATH="/:/vllm-workspace"
 
 RUN if [ "${VLLM_NIGHTLY}" = "true" ]; then \
-    uv pip install --system -U vllm --pre --index-url https://pypi.org/simple --extra-index-url https://wheels.vllm.ai/nightly && \
+    # Pin torch to the cu129 wheel index so the nightly upgrade doesn't pull
+    # in a CUDA 13.x torch (RunPod serverless hosts ship NVIDIA driver 12.9 ≈
+    # version 12090, which torch built for CUDA 13 rejects with "driver too
+    # old"). The cu129 extra-index is listed FIRST so pip prefers it for torch.
+    uv pip install --system -U vllm --pre \
+      --extra-index-url https://download.pytorch.org/whl/cu129 \
+      --index-url https://pypi.org/simple \
+      --extra-index-url https://wheels.vllm.ai/nightly && \
     apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
     uv pip install --system git+https://github.com/huggingface/transformers.git; \
 fi
