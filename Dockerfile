@@ -8,17 +8,25 @@ ENV PATH="/root/.local/bin:$PATH"
 
 RUN ldconfig /usr/local/cuda-12.9/compat/
 
-# Install vLLM 0.20.0 with the cu129 torch wheel — first version with day-0
-# Qwen3.6 / DeepSeek-V4 / MiniMax-M2.7 tool-call parser support, pinned to
-# CUDA 12.9 to match RunPod serverless hosts (NVIDIA driver 12090).
+# Two-stage vLLM install:
+#  (1) Install vLLM 0.19.1 first to seed all worker-handler dependencies in
+#      a known-good cu129 configuration (this is upstream's recipe).
+#  (2) Upgrade vLLM to 0.20.0 — first release with day-0 Qwen3.6 / DSv4 /
+#      MiniMax-M2.7 tool-call parsers. We pin --extra-index-url to cu129 so
+#      torch stays on the matching wheel.
+#  (3) Install transformers from main — Qwen3.6 ships custom modeling code
+#      that only works with a recent transformers; PyPI is often too old.
 #
-# IMPORTANT: must be `--torch-backend=cu129`, not `auto`. Per uv's docs, the
-# `auto` value queries the build host for an installed CUDA driver — and
-# falls back to CPU-only PyTorch when none is found. GitHub Actions runners
-# don't have GPUs, so `auto` silently gives us CPU-only torch and the worker
+# IMPORTANT: must use the explicit cu129 extra-index, not `--torch-backend=auto`.
+# Per uv's docs, `auto` queries the build host for a CUDA driver and falls
+# back to CPU-only PyTorch when none is found. GitHub Actions runners don't
+# have GPUs, so `auto` silently gives us CPU-only torch and the worker
 # crashes on import at runtime.
 RUN uv pip install --system "packaging>=24.2" && \
-    uv pip install --system "vllm[flashinfer]==0.20.0" --torch-backend=cu129
+    uv pip install --system "vllm[flashinfer]==0.19.1" --extra-index-url https://download.pytorch.org/whl/cu129 && \
+    uv pip install --system -U "vllm[flashinfer]==0.20.0" --extra-index-url https://download.pytorch.org/whl/cu129 && \
+    apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
+    uv pip install --system git+https://github.com/huggingface/transformers.git
 
 # Install additional Python dependencies (after vLLM to avoid PyTorch version conflicts)
 COPY builder/requirements.txt /requirements.txt
