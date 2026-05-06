@@ -8,9 +8,15 @@ ENV PATH="/root/.local/bin:$PATH"
 
 RUN ldconfig /usr/local/cuda-12.9/compat/
 
-# Install vLLM with FlashInfer - use CUDA 12.9 PyTorch wheels
+# Install vLLM 0.20.0 — first version with day-0 Qwen3.6, DeepSeek-V4, and
+# MiniMax-M2.7 tool-call parsers. We use `--torch-backend=auto` so uv inspects
+# the installed CUDA driver at build time and picks the matching wheel
+# variant (vLLM 0.20+ ships separate wheels for cu128 / cu129 / cu130). This
+# avoids the pitfall where `pip install vllm==0.20.0` defaults to the cu130
+# wheel and then fails on RunPod's cu129 hosts with `libcudart.so.13: cannot
+# open shared object file`.
 RUN uv pip install --system "packaging>=24.2" && \
-    uv pip install --system "vllm[flashinfer]==0.19.1" --extra-index-url https://download.pytorch.org/whl/cu129
+    uv pip install --system "vllm[flashinfer]==0.20.0" --torch-backend=auto
 
 # Install additional Python dependencies (after vLLM to avoid PyTorch version conflicts)
 COPY builder/requirements.txt /requirements.txt
@@ -46,19 +52,11 @@ ENV MODEL_NAME=$MODEL_NAME \
 
 ENV PYTHONPATH="/:/vllm-workspace"
 
-RUN if [ "${VLLM_NIGHTLY}" = "true" ]; then \
-    # NOTE: name says "nightly" but we install vLLM 0.20.0 stable — that's
-    # the first release with day-0 DeepSeek-V4 / MiniMax-M2.7 / Qwen3.6
-    # tool-call parser support, and unlike the nightly wheels it was compiled
-    # against CUDA 12.x (libcudart.so.12) so it loads fine on RunPod's cu129
-    # serverless hosts. True nightly wheels currently link against CUDA 13
-    # (libcudart.so.13) which isn't on those hosts. The cu129 extra-index
-    # keeps PyTorch on a matching wheel.
-    uv pip install --system -U "vllm[flashinfer]==0.20.0" \
-      --extra-index-url https://download.pytorch.org/whl/cu129 && \
-    apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
-    uv pip install --system git+https://github.com/huggingface/transformers.git; \
-fi
+# VLLM_NIGHTLY block removed — the base install above already pins vLLM 0.20.0
+# with auto-selected CUDA wheels. Re-add a similar block here if you ever need
+# a true nightly (e.g. for unreleased model architecture support); just be
+# aware the nightly wheels currently target CUDA 13 and won't load on
+# CUDA 12.x driver hosts without further pinning.
 
 COPY src /src
 RUN chmod +x /src/start.sh
