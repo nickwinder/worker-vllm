@@ -8,15 +8,17 @@ ENV PATH="/root/.local/bin:$PATH"
 
 RUN ldconfig /usr/local/cuda-12.9/compat/
 
-# Install vLLM 0.20.0 — first version with day-0 Qwen3.6, DeepSeek-V4, and
-# MiniMax-M2.7 tool-call parsers. We use `--torch-backend=auto` so uv inspects
-# the installed CUDA driver at build time and picks the matching wheel
-# variant (vLLM 0.20+ ships separate wheels for cu128 / cu129 / cu130). This
-# avoids the pitfall where `pip install vllm==0.20.0` defaults to the cu130
-# wheel and then fails on RunPod's cu129 hosts with `libcudart.so.13: cannot
-# open shared object file`.
+# Install vLLM 0.20.0 with the cu129 torch wheel — first version with day-0
+# Qwen3.6 / DeepSeek-V4 / MiniMax-M2.7 tool-call parser support, pinned to
+# CUDA 12.9 to match RunPod serverless hosts (NVIDIA driver 12090).
+#
+# IMPORTANT: must be `--torch-backend=cu129`, not `auto`. Per uv's docs, the
+# `auto` value queries the build host for an installed CUDA driver — and
+# falls back to CPU-only PyTorch when none is found. GitHub Actions runners
+# don't have GPUs, so `auto` silently gives us CPU-only torch and the worker
+# crashes on import at runtime.
 RUN uv pip install --system "packaging>=24.2" && \
-    uv pip install --system "vllm[flashinfer]==0.20.0" --torch-backend=auto
+    uv pip install --system "vllm[flashinfer]==0.20.0" --torch-backend=cu129
 
 # Install additional Python dependencies (after vLLM to avoid PyTorch version conflicts)
 COPY builder/requirements.txt /requirements.txt
